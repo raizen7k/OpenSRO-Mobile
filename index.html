@@ -1,1 +1,167 @@
 
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenSRO Mobile</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#101820;color:white;font-family:Arial}
+#game{width:100vw;height:100vh;display:block}
+#ui{position:fixed;top:12px;left:12px;right:12px;pointer-events:none}
+.panel{background:#101820cc;padding:12px;border:1px solid #b38b45;border-radius:10px}
+#health{height:12px;background:#444;border-radius:8px;overflow:hidden;margin-top:7px}
+#hp{height:100%;width:100%;background:#d33}
+#controls{position:fixed;bottom:25px;left:0;right:0;display:flex;justify-content:space-between;padding:20px;pointer-events:none}
+.pad{display:grid;grid-template-columns:55px 55px 55px;gap:5px;pointer-events:auto}
+button{background:#263b50dd;color:white;border:1px solid #c69a45;border-radius:12px;font-size:20px;padding:12px;touch-action:none}
+.action{width:75px;height:75px;border-radius:50%;background:#8b4c20dd}
+#message{position:fixed;bottom:150px;left:0;right:0;text-align:center;color:#ffdb8a;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="ui">
+ <div class="panel">
+  <b>⚔ OPEN SRO MOBILE</b><br>
+  Seviye: <span id="level">1</span> |
+  EXP: <span id="exp">0</span>/100<br>
+  Can: <span id="hptext">100</span>/100
+  <div id="health"><div id="hp"></div></div>
+  <div>Altın: <span id="gold">0</span></div>
+ </div>
+</div>
+<canvas id="game"></canvas>
+<div id="message">Canavarlara yaklaş ve saldır!</div>
+<div id="controls">
+ <div class="pad">
+  <div></div><button id="up">▲</button><div></div>
+  <button id="left">◀</button><button id="down">▼</button><button id="right">▶</button>
+ </div>
+ <button class="action" id="attack">⚔</button>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x8db6c8);
+scene.fog=new THREE.Fog(0x8db6c8,25,75);
+
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,200);
+const renderer=new THREE.WebGLRenderer({canvas:document.querySelector("#game"),antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));
+renderer.shadowMap.enabled=true;
+
+scene.add(new THREE.HemisphereLight(0xffffff,0x40502a,2));
+const sun=new THREE.DirectionalLight(0xffffff,2);
+sun.position.set(15,25,10);
+scene.add(sun);
+
+const ground=new THREE.Mesh(
+ new THREE.PlaneGeometry(150,150),
+ new THREE.MeshStandardMaterial({color:0x527b39})
+);
+ground.rotation.x=-Math.PI/2;
+scene.add(ground);
+
+const grid=new THREE.GridHelper(150,60,0x496d35,0x65844a);
+grid.position.y=.02;scene.add(grid);
+
+function tree(x,z){
+ const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.2,.3,2),new THREE.MeshStandardMaterial({color:0x69401e}));
+ trunk.position.set(x,1,z);scene.add(trunk);
+ const leaves=new THREE.Mesh(new THREE.ConeGeometry(1.5,3,7),new THREE.MeshStandardMaterial({color:0x24582c}));
+ leaves.position.set(x,3,z);scene.add(leaves);
+}
+for(let i=0;i<45;i++){
+ let x=(Math.random()-.5)*65,z=(Math.random()-.5)*65;
+ if(Math.abs(x)>5||Math.abs(z)>5)tree(x,z);
+}
+
+const player=new THREE.Group();
+const body=new THREE.Mesh(new THREE.BoxGeometry(.8,1.3,.5),new THREE.MeshStandardMaterial({color:0x2878c8}));
+body.position.y=1;
+player.add(body);
+const head=new THREE.Mesh(new THREE.SphereGeometry(.35,12,12),new THREE.MeshStandardMaterial({color:0xe6bd92}));
+head.position.y=1.9;player.add(head);
+scene.add(player);
+
+const monsters=[];
+function monster(x,z){
+ const m=new THREE.Group();
+ const mesh=new THREE.Mesh(new THREE.BoxGeometry(1.2,1.2,1.2),new THREE.MeshStandardMaterial({color:0x9c2929}));
+ mesh.position.y=.7;m.add(mesh);
+ m.position.set(x,0,z);
+ m.userData.hp=3;
+ scene.add(m);monsters.push(m);
+}
+for(let i=0;i<12;i++)monster((Math.random()-.5)*40,(Math.random()-.5)*40);
+
+let level=1,exp=0,gold=0,hp=100;
+const keys={up:false,down:false,left:false,right:false};
+["up","down","left","right"].forEach(k=>{
+ const b=document.getElementById(k);
+ b.onpointerdown=e=>{e.preventDefault();keys[k]=true};
+ b.onpointerup=b.onpointerleave=()=>keys[k]=false;
+});
+let attackCooldown=0;
+document.getElementById("attack").onclick=()=>{
+ if(attackCooldown>0)return;
+ attackCooldown=.5;
+ let target=null,dist=3;
+ monsters.forEach(m=>{
+  let d=player.position.distanceTo(m.position);
+  if(d<dist){dist=d;target=m}
+ });
+ if(target){
+  target.userData.hp--;
+  if(target.userData.hp<=0){
+   scene.remove(target);monsters.splice(monsters.indexOf(target),1);
+   exp+=25;gold+=10;
+   if(exp>=100){level++;exp-=100}
+   document.getElementById("message").textContent="Canavar yenildi! +10 altın";
+   monster((Math.random()-.5)*40,(Math.random()-.5)*40);
+  }else document.getElementById("message").textContent="Vuruş yaptın!";
+ }else document.getElementById("message").textContent="Yakında canavar yok!";
+ updateUI();
+};
+function updateUI(){
+ document.getElementById("level").textContent=level;
+ document.getElementById("exp").textContent=exp;
+ document.getElementById("gold").textContent=gold;
+ document.getElementById("hptext").textContent=hp;
+ document.getElementById("hp").style.width=hp+"%";
+}
+let last=0;
+function animate(t){
+ requestAnimationFrame(animate);
+ let dt=Math.min((t-last)/1000,.05);last=t;
+ let dx=0,dz=0;
+ if(keys.up)dz-=1;if(keys.down)dz+=1;
+ if(keys.left)dx-=1;if(keys.right)dx+=1;
+ const len=Math.hypot(dx,dz);
+ if(len){player.position.x+=dx/len*7*dt;player.position.z+=dz/len*7*dt}
+ player.position.x=Math.max(-65,Math.min(65,player.position.x));
+ player.position.z=Math.max(-65,Math.min(65,player.position.z));
+ attackCooldown=Math.max(0,attackCooldown-dt);
+ monsters.forEach(m=>{
+  const d=m.position.distanceTo(player.position);
+  if(d<12&&d>1.5){
+   m.position.x+=(player.position.x-m.position.x)*dt*.35;
+   m.position.z+=(player.position.z-m.position.z)*dt*.35;
+  }
+ });
+ camera.position.lerp(new THREE.Vector3(player.position.x,8,player.position.z+11),.08);
+ camera.lookAt(player.position.x,1,player.position.z);
+ renderer.render(scene,camera);
+}
+animate(0);
+onresize=()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+};
+</script>
+</body>
+</html>
+
